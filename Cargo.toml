@@ -1,0 +1,11 @@
+[package]
+name = "bevy_tacview"
+authors = ["ZoOL <zhooul@gmail.com>"]
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy = { version = "0.13", default-features = false }
+bytes = "1"
+chrono = { version = "0.4" }
+thiserror = "1.0"
