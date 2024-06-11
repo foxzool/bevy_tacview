@@ -1,14 +1,11 @@
 use bevy::prelude::*;
 use bevy_octopus::connections::NetworkPeer;
-use bevy_octopus::prelude::NetworkNode;
+use bevy_octopus::prelude::{ChannelId, NetworkNode};
 use bevy_octopus::shared::{NetworkEvent, NetworkNodeEvent};
 use chrono::{DateTime, SecondsFormat, Utc};
 
 use crate::record::PropertyList;
-use crate::{
-    record::{Coords, Event, EventKind, GlobalProperty, Property, Record, Update},
-    Writer,
-};
+use crate::{record::{Coords, Event, EventKind, GlobalProperty, Property, Record, Update}, TACVIEW_CHANNEL, Writer};
 
 static REAL_TIME_PROTOCOL: &str = "XtraLib.Stream.0
 Tacview.RealTimeTelemetry.0
@@ -49,13 +46,16 @@ pub struct TacviewResource {
     pub data_recorder: String,
 }
 
-/// 连上host后， 发送头
+/// send header after connected
 pub(crate) fn send_header_after_connected(
     mut network_events: EventReader<NetworkNodeEvent>,
     q_node: Query<&NetworkNode, With<NetworkPeer>>,
     mut ev_sync: EventWriter<SyncClient>,
 ) {
     for event in network_events.read() {
+        if event.channel_id != TACVIEW_CHANNEL {
+            continue;
+        }
         match &event.event {
             NetworkEvent::Connected => {
                 info!("Tacview Client Connected {:?}", event.node);
@@ -149,10 +149,13 @@ pub enum ObjectNeedSync {
 pub(crate) fn sync_all_object_to_client(
     q_actors: Query<(Entity, &Coords, &PropertyList)>,
     tacview_res: Res<TacviewResource>,
-    q_node: Query<&NetworkNode, With<NetworkPeer>>,
+    q_node: Query<(&ChannelId , &NetworkNode), With<NetworkPeer>>,
     time: Res<Time>,
 ) {
-    for net_node in q_node.iter() {
+    for (channel_id, net_node) in q_node.iter() {
+        if *channel_id != TACVIEW_CHANNEL {
+            continue;
+        }
         // meta
         let meta = build_meta_data(&tacview_res);
         net_node.send(&meta);
@@ -183,10 +186,13 @@ pub(crate) fn update_objects(
     time: Res<Time>,
     tacview_res: Res<TacviewResource>,
     q_objects: Query<(Entity, &ObjectNeedSync, &Coords, &PropertyList)>,
-    q_node: Query<&NetworkNode, With<NetworkPeer>>,
+    q_node: Query<(&ChannelId, &NetworkNode), With<NetworkPeer>>,
     mut commands: Commands,
 ) {
-    for net_node in q_node.iter() {
+    for (channel_id, net_node) in q_node.iter() {
+        if *channel_id != TACVIEW_CHANNEL {
+            continue;
+        }
         let mut w = Writer::new_empty(vec![]).unwrap();
         let frame_time = if let Some(recording_time) = tacview_res.recording_time {
             (Utc::now() - recording_time).num_milliseconds() as f64 / 1000.0

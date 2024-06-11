@@ -1,24 +1,20 @@
-use crate::systems::{
-    send_header_after_connected, sync_all_object_to_client, update_objects, SyncClient,
-};
+#![doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md"))]
 
 use bevy::prelude::*;
 use bevy_octopus::prelude::*;
+
+pub use parser::ParseError;
+pub use systems::TacviewResource;
+pub use writer::Writer;
+
+use crate::systems::{
+    send_header_after_connected, sync_all_object_to_client, SyncClient, update_objects,
+};
 
 mod parser;
 pub mod record;
 pub mod systems;
 mod writer;
-
-pub use bevy_octopus as octopus;
-pub use parser::ParseError;
-pub use systems::TacviewResource;
-pub use writer::Writer;
-
-// use crate::host::{
-//     send_actor_events, send_air_object, send_header_after_connected, sync_full_object,
-//     ClientNeedSync,
-// };
 
 pub const TACVIEW_CHANNEL: ChannelId = ChannelId("Tacview client");
 
