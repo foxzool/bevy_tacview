@@ -49,8 +49,9 @@ pub struct TacviewResource {
 /// send header after connected
 pub(crate) fn send_header_after_connected(
     mut network_events: EventReader<NetworkNodeEvent>,
-    q_node: Query<&NetworkNode, With<NetworkPeer>>,
-    mut ev_sync: EventWriter<SyncClient>,
+    q_node: Query<(Entity, &NetworkNode), With<NetworkPeer>>,
+    mut commands: Commands,
+    tacview_res: Res<TacviewResource>,
 ) {
     for event in network_events.read() {
         if event.channel_id != TACVIEW_CHANNEL {
@@ -59,10 +60,15 @@ pub(crate) fn send_header_after_connected(
         match &event.event {
             NetworkEvent::Connected => {
                 info!("Tacview Client Connected {:?}", event.node);
-                for net_node in q_node.iter() {
-                    net_node.send(REAL_TIME_PROTOCOL.as_bytes())
+                if let Ok((e, net_node)) = q_node.get(event.node) {
+                    net_node.send(REAL_TIME_PROTOCOL.as_bytes());
+                    commands.entity(e).insert(NeedFullSync);
+                    // meta
+                    let meta = build_meta_data(&tacview_res);
+                    net_node.send(&meta);
+                } else {
+                    warn!("Failed to get network node for {:?}", event.node)
                 }
-                ev_sync.send(SyncClient);
             }
             NetworkEvent::Disconnected => {
                 info!("Tacview Client Disconnected");
@@ -136,10 +142,11 @@ fn build_meta_data(host_res: &TacviewResource) -> Vec<u8> {
     writer.into_inner()
 }
 
-#[derive(Event)]
-pub struct SyncClient;
 
 #[derive(Component)]
+pub struct NeedFullSync;
+
+#[derive(Component, Debug, Reflect)]
 pub enum ObjectNeedSync {
     Spawn,
     Update,
@@ -148,54 +155,28 @@ pub enum ObjectNeedSync {
     Destroy,
 }
 
-pub(crate) fn sync_all_object_to_client(
-    q_actors: Query<(Entity, &Coords, &PropertyList)>,
-    tacview_res: Res<TacviewResource>,
-    q_node: Query<(&ChannelId, &NetworkNode), With<NetworkPeer>>,
-    time: Res<Time>,
-) {
-    for (channel_id, net_node) in q_node.iter() {
-        if *channel_id != TACVIEW_CHANNEL {
-            continue;
-        }
-        // meta
-        let meta = build_meta_data(&tacview_res);
-        net_node.send(&meta);
-
-        let mut w = Writer::new_empty(vec![]).unwrap();
-        let frame_time = if let Some(recording_time) = tacview_res.recording_time {
-            (Utc::now() - recording_time).num_milliseconds() as f64 / 1000.0
-        } else {
-            time.elapsed_seconds_f64()
-        };
-        w.write(Record::Frame(frame_time)).unwrap();
-
-        for (entity, coords, props_list) in q_actors.iter() {
-            let mut props = vec![Property::T(coords.clone())];
-            props.extend(props_list.0.clone());
-            w.write(Record::Update(Update {
-                id: entity.to_bits(),
-                props,
-            }))
-                .unwrap();
-        }
-
-        net_node.send(&w.into_inner())
-    }
-}
 
 pub(crate) fn update_objects(
     time: Res<Time>,
     tacview_res: Res<TacviewResource>,
     q_objects: Query<(Entity, &ObjectNeedSync, &Coords, &PropertyList)>,
-    q_node: Query<(&ChannelId, &NetworkNode), With<NetworkPeer>>,
+    q_node: Query<(Entity, &ChannelId, &NetworkNode, Option<&NeedFullSync>), With<NetworkPeer>>,
     mut commands: Commands,
 ) {
-    for (channel_id, net_node) in q_node.iter() {
+    for (e, channel_id, net_node, opt_full_sync) in q_node.iter() {
         if *channel_id != TACVIEW_CHANNEL {
             continue;
         }
         let mut w = Writer::new_empty(vec![]).unwrap();
+
+        let need_full_sync = opt_full_sync.is_some();
+
+        if need_full_sync {
+            // meta
+            let meta = build_meta_data(&tacview_res);
+            net_node.send(&meta);
+        }
+
         let frame_time = if let Some(recording_time) = tacview_res.recording_time {
             (Utc::now() - recording_time).num_milliseconds() as f64 / 1000.0
         } else {
@@ -203,10 +184,17 @@ pub(crate) fn update_objects(
         };
         w.write(Record::Frame(frame_time)).unwrap();
 
+
         for (entity, need_sync, coords, props_list) in q_objects.iter() {
             let mut props = vec![Property::T(coords.clone())];
 
-            match need_sync {
+            let sync_kind = if need_full_sync {
+                &ObjectNeedSync::Spawn
+            } else {
+                need_sync
+            };
+
+            match sync_kind {
                 ObjectNeedSync::Spawn => {
                     props.extend(props_list.0.clone());
                     w.write(Record::Update(Update {
@@ -254,6 +242,10 @@ pub(crate) fn update_objects(
             commands.entity(entity).remove::<ObjectNeedSync>();
         }
 
-        net_node.send(&w.into_inner())
+        net_node.send(&w.into_inner());
+
+        if need_full_sync {
+            commands.entity(e).remove::<NeedFullSync>();
+        }
     }
 }
