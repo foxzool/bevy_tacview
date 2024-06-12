@@ -143,13 +143,15 @@ pub struct SyncClient;
 pub enum ObjectNeedSync {
     Spawn,
     Update,
+    LeftArea,
+    Timeout,
     Destroy,
 }
 
 pub(crate) fn sync_all_object_to_client(
     q_actors: Query<(Entity, &Coords, &PropertyList)>,
     tacview_res: Res<TacviewResource>,
-    q_node: Query<(&ChannelId , &NetworkNode), With<NetworkPeer>>,
+    q_node: Query<(&ChannelId, &NetworkNode), With<NetworkPeer>>,
     time: Res<Time>,
 ) {
     for (channel_id, net_node) in q_node.iter() {
@@ -224,6 +226,24 @@ pub(crate) fn update_objects(
                     w.write(Record::Remove(entity.to_bits())).unwrap();
                     w.write(Event {
                         kind: EventKind::Destroyed,
+                        params: vec![entity.to_bits().to_string()],
+                        text: None,
+                    })
+                        .unwrap();
+                }
+                ObjectNeedSync::LeftArea => {
+                    w.write(Record::Remove(entity.to_bits())).unwrap();
+                    w.write(Event {
+                        kind: EventKind::LeftArea,
+                        params: vec![entity.to_bits().to_string()],
+                        text: None,
+                    })
+                        .unwrap();
+                }
+                ObjectNeedSync::Timeout => {
+                    w.write(Record::Remove(entity.to_bits())).unwrap();
+                    w.write(Event {
+                        kind: EventKind::Timeout,
                         params: vec![entity.to_bits().to_string()],
                         text: None,
                     })
