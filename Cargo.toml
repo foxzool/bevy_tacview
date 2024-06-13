@@ -8,8 +8,8 @@ edition = "2021"
 [dependencies]
 bevy = { version = "0.13", default-features = false }
 
-#bevy_octopus = { git = "https://github.com/foxzool/bevy_octopus.git", version = "0.1.0" }
-bevy_octopus = { path = "../bevy_octopus", version = "0.1.0" }
+bevy_octopus = { git = "https://github.com/foxzool/bevy_octopus.git", version = "0.1.0" }
+#bevy_octopus = { path = "../bevy_octopus", version = "0.1.0" }
 
 bytes = "1"
 chrono = { version = "0.4" }
